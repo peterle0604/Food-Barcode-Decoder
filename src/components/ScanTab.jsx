@@ -1,41 +1,32 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import ProductIdentificationCard from './ProductIdentificationCard.jsx'
 import Results from './Results.jsx'
 import { analyzeFoodDeterministic } from '../utils/analyzeFoodDeterministic.js'
-import { startBarcodeScanner } from '../utils/startBarcodeScanner.js'
 import { lookupProductBarcode } from '../utils/lookupBarcode.js'
 
 function getProductImageUrl(product) {
   return product.image_front_url || product.image_front_small_url || null
 }
 
-function ScanTab({ onSwitchToPhoto }) {
-  const videoRef = useRef(null)
-  const stopScanRef = useRef(null)
-  const handleDetectionRef = useRef(null)
+function formatBarcodeDisplay(value) {
+  const digits = value.replace(/\D/g, '')
+  if (digits.length <= 4) return digits
+  return digits.replace(/(\d{4})(?=\d)/g, '$1 ').trim()
+}
 
-  const [scanKey, setScanKey] = useState(0)
-  const [phase, setPhase] = useState('scanning')
+function ScanTab({ onGoToPaste }) {
+  const [phase, setPhase] = useState('idle')
   const [barcode, setBarcode] = useState('')
+  const [manualBarcode, setManualBarcode] = useState('')
   const [product, setProduct] = useState(null)
   const [results, setResults] = useState(null)
   const [errorMessage, setErrorMessage] = useState('')
-  const [cameraError, setCameraError] = useState('')
-  const [manualBarcode, setManualBarcode] = useState('')
-  const handlingRef = useRef(false)
 
-  const stopScanner = useCallback(() => {
-    stopScanRef.current?.()
-    stopScanRef.current = null
-    const video = videoRef.current
-    if (video) video.srcObject = null
-  }, [])
+  const digitCount = manualBarcode.length
+  const canSubmit =
+    digitCount === 8 || digitCount === 12 || digitCount === 13
 
-  const handleDetection = useCallback(async (code) => {
-    if (handlingRef.current) return
-    handlingRef.current = true
-    stopScanner()
-
+  const runLookup = useCallback(async (code) => {
     setBarcode(code)
     setPhase('loading')
 
@@ -43,7 +34,6 @@ function ScanTab({ onSwitchToPhoto }) {
       const lookup = await lookupProductBarcode(code)
       if (!lookup) {
         setPhase('not-found')
-        handlingRef.current = false
         return
       }
       setBarcode(lookup.barcode)
@@ -58,75 +48,22 @@ function ScanTab({ onSwitchToPhoto }) {
       )
       setPhase('error')
     }
-    handlingRef.current = false
-  }, [stopScanner])
+  }, [])
 
-  handleDetectionRef.current = handleDetection
-
-  const handleManualSubmit = (event) => {
+  const handleSubmit = (event) => {
     event.preventDefault()
-    const value = manualBarcode.trim()
-    if (!value) return
-    handleDetection(value)
+    if (!canSubmit) return
+    runLookup(manualBarcode.trim())
   }
 
-  const scanAgain = useCallback(() => {
-    stopScanner()
-    handlingRef.current = false
+  const resetForm = () => {
     setBarcode('')
+    setManualBarcode('')
     setProduct(null)
     setResults(null)
     setErrorMessage('')
-    setCameraError('')
-    setManualBarcode('')
-    setPhase('scanning')
-    setScanKey((k) => k + 1)
-  }, [stopScanner])
-
-  useEffect(() => {
-    if (phase !== 'scanning') return undefined
-
-    let active = true
-
-    const startScan = async () => {
-      const video = videoRef.current
-      if (!video || !active) return
-
-      setCameraError('')
-
-      try {
-        const stop = await startBarcodeScanner(
-          video,
-          (text) => handleDetectionRef.current?.(text),
-          () => active && !handlingRef.current,
-        )
-
-        if (!active) {
-          stop()
-          return
-        }
-
-        stopScanRef.current = stop
-      } catch {
-        if (active) {
-          setCameraError(
-            'Could not start the camera preview. Tap Scan again or use the Photo tab.',
-          )
-          setPhase('camera-denied')
-        }
-      }
-    }
-
-    startScan()
-
-    return () => {
-      active = false
-      stopScanRef.current?.()
-      stopScanRef.current = null
-      const el = videoRef.current
-      if (el) el.srcObject = null
-    }
-  }, [scanKey, phase])
+    setPhase('idle')
+  }
 
   if ((phase === 'results' || phase === 'analyzing') && product) {
     return (
@@ -137,16 +74,17 @@ function ScanTab({ onSwitchToPhoto }) {
           imageUrl={getProductImageUrl(product)}
         />
         {phase === 'analyzing' && (
-          <div className="loading-row">
+          <div className="status-card status-card--loading">
             <div className="spinner" aria-hidden="true" />
-            <p className="loading-text">Analyzing ingredients...</p>
+            <p className="status-card__title">Analyzing ingredients</p>
+            <p className="status-card__text">Checking for seed oils, additives, and more…</p>
           </div>
         )}
         {phase === 'results' && results && (
           <>
             <Results data={results} />
-            <button type="button" className="btn-primary" onClick={scanAgain}>
-              Scan again
+            <button type="button" className="btn-primary" onClick={resetForm}>
+              Look up another product
             </button>
           </>
         )}
@@ -155,103 +93,127 @@ function ScanTab({ onSwitchToPhoto }) {
   }
 
   return (
-    <div className="tab-panel">
-      {(phase === 'scanning' || phase === 'loading') && (
-        <div className="scanner-wrap">
-          <video
-            ref={videoRef}
-            className="scanner-video"
-            autoPlay
-            muted
-            playsInline
-          />
-          {phase === 'loading' && (
-            <div className="scanner-overlay">
-              <p className="barcode-detected">Barcode: {barcode}</p>
-              <div className="loading-row">
-                <div className="spinner" aria-hidden="true" />
-                <p className="loading-text">Looking up product...</p>
-              </div>
+    <div className="tab-panel barcode-tab">
+      {phase === 'idle' && (
+        <>
+          <section className="card barcode-intro" aria-labelledby="barcode-intro-title">
+            <div className="barcode-intro__icon" aria-hidden="true">
+              <span className="barcode-bars" />
             </div>
+            <div className="barcode-intro__text">
+              <h2 id="barcode-intro-title" className="barcode-intro__title">
+                Look up by barcode
+              </h2>
+              <p className="barcode-intro__desc">
+                Enter the numbers printed below the barcode on any packaged food.
+                We&apos;ll pull ingredients from Open Food Facts and analyze them
+                for you.
+              </p>
+            </div>
+          </section>
+
+          <form
+            className="card barcode-form"
+            onSubmit={handleSubmit}
+            noValidate
+          >
+            <label htmlFor="manual-barcode" className="barcode-form__label">
+              Barcode number
+            </label>
+            <p className="barcode-form__hint">
+              Enter 8 digits (EAN-8), 12 (UPC), or 13 (EAN) — no spaces needed
+            </p>
+            <div className="barcode-input-wrap">
+              <input
+                id="manual-barcode"
+                type="text"
+                inputMode="numeric"
+                className="barcode-input"
+                value={manualBarcode}
+                onChange={(e) =>
+                  setManualBarcode(e.target.value.replace(/\D/g, ''))
+                }
+                placeholder="12345678"
+                autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck="false"
+                maxLength={13}
+                aria-describedby="barcode-digit-hint"
+              />
+            </div>
+            <p
+              id="barcode-digit-hint"
+              className={`barcode-digit-hint ${canSubmit ? 'barcode-digit-hint--ok' : ''}`}
+            >
+              {digitCount === 0
+                ? 'Enter 8, 12, or 13 digits to continue'
+                : canSubmit
+                  ? `${digitCount} digits — ready to decode`
+                  : `${digitCount} digit${digitCount === 1 ? '' : 's'} — need 8, 12, or 13 total`}
+            </p>
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={!canSubmit}
+            >
+              Decode product
+            </button>
+          </form>
+
+          <section className="barcode-help card card--subtle">
+            <h3 className="barcode-help__title">Where to find it</h3>
+            <ol className="barcode-help__list">
+              <li>Flip the package to the back or side panel</li>
+              <li>Look for vertical black bars with numbers underneath</li>
+              <li>Type those numbers in the box above</li>
+            </ol>
+          </section>
+        </>
+      )}
+
+      {phase === 'loading' && (
+        <div className="status-card status-card--loading">
+          <div className="spinner" aria-hidden="true" />
+          <p className="status-card__title">Looking up product</p>
+          <p className="status-card__text">
+            Searching Open Food Facts for{' '}
+            <strong>{formatBarcodeDisplay(barcode)}</strong>
+          </p>
+        </div>
+      )}
+
+      {phase === 'not-found' && (
+        <div className="status-card status-card--warn">
+          <p className="status-card__title">Product not found</p>
+          <p className="status-card__text">
+            We couldn&apos;t find barcode{' '}
+            <strong>{formatBarcodeDisplay(barcode)}</strong> in Open Food Facts.
+            Double-check the number, or paste the ingredients list instead.
+          </p>
+          <button type="button" className="btn-primary" onClick={resetForm}>
+            Try another barcode
+          </button>
+          {onGoToPaste && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={onGoToPaste}
+            >
+              Paste ingredients instead
+            </button>
           )}
         </div>
       )}
 
-      {phase === 'scanning' && (
-        <form className="manual-barcode-form" onSubmit={handleManualSubmit}>
-          <label htmlFor="manual-barcode" className="manual-barcode-label">
-            Enter barcode manually
-          </label>
-          <input
-            id="manual-barcode"
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            className="manual-barcode-input"
-            value={manualBarcode}
-            onChange={(e) =>
-              setManualBarcode(e.target.value.replace(/\D/g, ''))
-            }
-            placeholder="UPC / EAN number"
-            autoComplete="off"
-          />
-          <button
-            type="submit"
-            className="btn-primary"
-            disabled={!manualBarcode.trim()}
-          >
-            Look up product
-          </button>
-        </form>
-      )}
-
-      {phase === 'scanning' && (
-        <p className="scanner-hint">
-          Center the product barcode (UPC/EAN) and hold steady for a moment
-        </p>
-      )}
-
-      {phase === 'scanning' && cameraError && (
-        <p className="message message--error">{cameraError}</p>
-      )}
-
-      {phase === 'not-found' && (
-        <>
-          <p className="message">
-            Product not found. Try the Photo or Paste tab.
-          </p>
-          <button type="button" className="btn-primary" onClick={scanAgain}>
-            Scan again
-          </button>
-        </>
-      )}
-
-      {phase === 'camera-denied' && (
-        <>
-          <p className="message">
-            {cameraError ||
-              'Camera access is needed to scan barcodes.'}
-          </p>
-          <button type="button" className="btn-primary" onClick={scanAgain}>
-            Try camera again
-          </button>
-          <button
-            type="button"
-            className="btn-primary btn-secondary-spacing"
-            onClick={onSwitchToPhoto}
-          >
-            Use Photo tab
-          </button>
-        </>
-      )}
-
       {phase === 'error' && (
-        <>
-          <p className="message message--error">{errorMessage}</p>
-          <button type="button" className="btn-primary" onClick={scanAgain}>
-            Scan again
+        <div className="status-card status-card--error">
+          <p className="status-card__title">Something went wrong</p>
+          <p className="status-card__text">{errorMessage}</p>
+          <button type="button" className="btn-primary" onClick={resetForm}>
+            Try again
           </button>
-        </>
+        </div>
       )}
     </div>
   )

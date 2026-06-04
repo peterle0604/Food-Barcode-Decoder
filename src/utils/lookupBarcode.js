@@ -20,13 +20,11 @@ export async function lookupBarcode(barcode) {
   }
 }
 
-/** Lookup using normalized barcode and common UPC/EAN alternate forms. */
+/** Lookup using normalized barcode and common UPC/EAN/EAN-8 alternate forms. */
 export async function lookupProductBarcode(rawOrNormalized) {
-  const normalized =
-    typeof rawOrNormalized === 'string' &&
-    /^\d{8,13}$/.test(rawOrNormalized)
-      ? rawOrNormalized
-      : normalizeProductBarcode(rawOrNormalized)
+  const normalized = normalizeProductBarcode(
+    String(rawOrNormalized ?? ''),
+  )
 
   if (!normalized) return null
 

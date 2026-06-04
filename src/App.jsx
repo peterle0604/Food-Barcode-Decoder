@@ -1,12 +1,10 @@
 import { useState } from 'react'
 import ScanTab from './components/ScanTab.jsx'
-import PhotoTab from './components/PhotoTab.jsx'
 import PasteTab from './components/PasteTab.jsx'
 
 const TABS = [
-  { id: 'scan', label: 'Scan' },
-  { id: 'photo', label: 'Photo' },
-  { id: 'paste', label: 'Paste' },
+  { id: 'scan', label: 'Barcode' },
+  { id: 'paste', label: 'Ingredients' },
 ]
 
 function App() {
@@ -16,6 +14,9 @@ function App() {
     <div className="app">
       <header className="app-header">
         <h1 className="app-title">Food Decoder</h1>
+        <p className="app-tagline">
+          Understand what&apos;s in your food — no account required
+        </p>
         <nav className="tabs" role="tablist">
           {TABS.map((tab) => (
             <button
@@ -34,9 +35,8 @@ function App() {
 
       <main className="app-main">
         {activeTab === 'scan' && (
-          <ScanTab onSwitchToPhoto={() => setActiveTab('photo')} />
+          <ScanTab onGoToPaste={() => setActiveTab('paste')} />
         )}
-        {activeTab === 'photo' && <PhotoTab />}
         {activeTab === 'paste' && <PasteTab />}
       </main>
     </div>

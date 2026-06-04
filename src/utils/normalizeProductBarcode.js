@@ -1,5 +1,5 @@
 /** GS1 check digit for EAN-13, UPC-A (12 digit), and EAN-8. */
-function hasValidGs1CheckDigit(digits) {
+export function hasValidGs1CheckDigit(digits) {
   const len = digits.length
   if (len !== 8 && len !== 12 && len !== 13) return false
 
@@ -14,40 +14,37 @@ function hasValidGs1CheckDigit(digits) {
 }
 
 /**
- * Normalize a raw scan to a retail product barcode (8, 12, or 13 digits).
- * Returns null if the value is not a valid product barcode.
+ * Normalize manual entry to a retail barcode (8, 12, or 13 digits).
+ * Check digit is not required — Open Food Facts is queried either way.
  */
 export function normalizeProductBarcode(raw) {
   if (!raw || typeof raw !== 'string') return null
 
   const digits = raw.replace(/\D/g, '')
-  if (digits.length < 8 || digits.length > 13) return null
-
-  if (digits.length === 13 && hasValidGs1CheckDigit(digits)) {
-    return digits
-  }
-
-  if (digits.length === 12 && hasValidGs1CheckDigit(digits)) {
-    return `0${digits}`
-  }
-
-  if (digits.length === 8 && hasValidGs1CheckDigit(digits)) {
+  if (digits.length === 8 || digits.length === 12 || digits.length === 13) {
     return digits
   }
 
   return null
 }
 
-/** Barcode strings to try with Open Food Facts (EAN-13 and UPC variants). */
+/** Barcode strings to try with Open Food Facts (EAN-13, UPC, and EAN-8 variants). */
 export function getBarcodeLookupVariants(normalized) {
   if (!normalized) return []
 
   const variants = [normalized]
+
   if (normalized.length === 13 && normalized.startsWith('0')) {
     variants.push(normalized.slice(1))
   }
+
   if (normalized.length === 12) {
     variants.push(`0${normalized}`)
+  }
+
+  if (normalized.length === 8) {
+    variants.push(normalized.padStart(13, '0'))
+    variants.push(`0${normalized.padStart(12, '0')}`)
   }
 
   return [...new Set(variants)]
